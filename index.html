@@ -283,6 +283,7 @@
   }
   .card.is-example{border-style:dashed;}
   .card.is-locked{background:var(--surface-2);}
+  .card.is-block-confirmed{border-color:var(--ok);}
   .card.is-done{opacity:0.6;}
   .card.is-done .topic-input,
   .card.is-done .topic-text{text-decoration:line-through;}
@@ -385,13 +386,14 @@
   }
   .link-open[aria-disabled="true"]{opacity:0.35;pointer-events:none;}
   .card-footer{
-    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
     border-top:1px solid var(--border);padding-top:8px;margin-top:2px;
   }
   .updated-by{
     font-size:10px;color:var(--text-muted);
     flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
+  .card-footer-actions{display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;}
   .delete-btn{
     background:transparent;border:1px solid var(--border);color:var(--text-muted);
     font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;
@@ -399,6 +401,16 @@
   }
   .delete-btn:hover{color:var(--accent);border-color:var(--accent);}
   .delete-btn.is-confirm{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+  .confirm-block-btn{
+    background:transparent;border:1px solid var(--ok);color:var(--ok);
+    font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;flex:0 0 auto;
+  }
+  .confirm-block-btn:hover{background:var(--ok);color:#06240f;}
+  .edit-block-btn{
+    background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;flex:0 0 auto;
+  }
+  .edit-block-btn:hover{color:var(--text);border-color:var(--text);}
 
   .add-row{
     border:1px dashed var(--border);
@@ -409,6 +421,8 @@
     gap:6px;
   }
   .add-row .topic-input{font-weight:500;}
+  .add-submit-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .add-submit-row .link-missing{min-width:0;}
   .add-row button[type=submit]{
     background:var(--accent);
     color:var(--accent-ink);
@@ -1148,6 +1162,24 @@
       .catch(function(){ toast("Nie udało się usunąć posta.", "error"); });
   }
 
+  function confirmBlock(id, topicVal, timeVal, assigneeVal){
+    if (!state.db) return;
+    if (!topicVal.trim() || !timeVal || !assigneeVal.trim()) {
+      toast("Uzupełnij tytuł, godzinę i osobę, aby zatwierdzić blok.", "error");
+      return;
+    }
+    var payload = { confirmed: true, updatedAt: new Date().toISOString(), updatedBy: state.myName || null };
+    state.db.collection("posts").doc(id).update(payload)
+      .catch(function(){ toast("Nie udało się zatwierdzić bloku.", "error"); });
+  }
+
+  function unconfirmBlock(id){
+    if (!state.db) return;
+    var payload = { confirmed: false, updatedAt: new Date().toISOString(), updatedBy: state.myName || null };
+    state.db.collection("posts").doc(id).update(payload)
+      .catch(function(){ toast("Nie udało się cofnąć zatwierdzenia.", "error"); });
+  }
+
   function addPost(date, fields){
     if (!state.db) return;
     var payload = {
@@ -1157,6 +1189,7 @@
       assignee: fields.assignee || "",
       link: fields.link || "",
       done: false,
+      confirmed: false,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       updatedBy: state.myName || null
@@ -1192,9 +1225,12 @@
 
   function buildCard(post, date, locked){
     var el = document.createElement("div");
-    el.className = "card" + (post.example ? " is-example" : "") + (post.done ? " is-done" : "") + (locked ? " is-locked" : "");
+    var blockConfirmed = !!post.confirmed;
+    var fieldsLocked = locked || blockConfirmed;
+    el.className = "card" + (post.example ? " is-example" : "") + (post.done ? " is-done" : "") + (locked ? " is-locked" : "") + (blockConfirmed && !locked ? " is-block-confirmed" : "");
     el.dataset.id = post.id;
     el.dataset.locked = locked ? "1" : "0";
+    el.dataset.confirmed = blockConfirmed ? "1" : "0";
     el.dataset.date = post.date || date;
     el.dataset.time = post.time || "";
     el.dataset.done = post.done ? "1" : "0";
@@ -1226,7 +1262,7 @@
     });
     row1.appendChild(done);
 
-    if (locked) {
+    if (fieldsLocked) {
       var topicText = document.createElement("span");
       topicText.id = "topic-" + post.id;
       topicText.className = "topic-text";
@@ -1253,7 +1289,7 @@
     var metaRow = document.createElement("div");
     metaRow.className = "meta-row";
 
-    if (locked) {
+    if (fieldsLocked) {
       var timeText = document.createElement("span");
       timeText.id = "time-" + post.id;
       timeText.className = "time-text";
@@ -1295,7 +1331,7 @@
 
     if (locked) {
       renderLockedLinkCell(linkRow, post.link);
-    } else {
+    } else if (blockConfirmed || post.link) {
       var link = document.createElement("input");
       link.type = "url";
       link.id = "link-input-" + post.id;
@@ -1319,6 +1355,11 @@
       open.textContent = "↗";
       linkRow.appendChild(open);
       updateLinkOpen(el, post.link, open);
+    } else {
+      var linkHint = document.createElement("span");
+      linkHint.className = "link-missing";
+      linkHint.textContent = "Link będzie dostępny po zatwierdzeniu bloku.";
+      linkRow.appendChild(linkHint);
     }
 
     el.appendChild(linkRow);
@@ -1329,6 +1370,35 @@
     updatedBy.className = "updated-by";
     updatedBy.id = "updated-" + post.id;
     footer.appendChild(updatedBy);
+
+    var actions = document.createElement("div");
+    actions.className = "card-footer-actions";
+
+    if (!state.readOnly && !locked) {
+      if (!blockConfirmed) {
+        var confirmBtn = document.createElement("button");
+        confirmBtn.className = "confirm-block-btn";
+        confirmBtn.type = "button";
+        confirmBtn.textContent = "Zatwierdź";
+        confirmBtn.title = "Zatwierdź blok i odblokuj link do researchu";
+        confirmBtn.addEventListener("click", function(){
+          var topicVal = topic ? topic.value : (post.topic || "");
+          var timeVal = time ? time.value : (post.time || "");
+          var assigneeVal = assigneeWrap && assigneeWrap._input ? assigneeWrap._input.value : (post.assignee || "");
+          confirmBlock(post.id, topicVal, timeVal, assigneeVal);
+        });
+        actions.appendChild(confirmBtn);
+      } else {
+        var editBtn = document.createElement("button");
+        editBtn.className = "edit-block-btn";
+        editBtn.type = "button";
+        editBtn.textContent = "Edytuj";
+        editBtn.title = "Odblokuj blok do edycji";
+        editBtn.addEventListener("click", function(){ unconfirmBlock(post.id); });
+        actions.appendChild(editBtn);
+      }
+    }
+
     if (!state.readOnly) {
       var del = document.createElement("button");
       del.className = "delete-btn";
@@ -1354,8 +1424,10 @@
         del.classList.remove("is-confirm");
         del.textContent = "Usuń";
       });
-      footer.appendChild(del);
+      actions.appendChild(del);
     }
+
+    footer.appendChild(actions);
     el.appendChild(footer);
 
     return el;
@@ -1380,23 +1452,25 @@
     if (done) done.checked = !!post.done;
 
     var locked = el.dataset.locked === "1";
+    var blockConfirmed = el.dataset.confirmed === "1";
+    var fieldsLocked = locked || blockConfirmed;
 
     var topic = el.querySelector("#topic-" + post.id);
-    if (locked) {
+    if (fieldsLocked) {
       topic.textContent = post.topic || "(bez tematu)";
     } else if (document.activeElement !== topic) {
       topic.value = post.topic || ""; autoGrow(topic);
     }
 
     var time = el.querySelector("#time-" + post.id);
-    if (locked) {
+    if (fieldsLocked) {
       time.textContent = post.time || "—";
     } else if (document.activeElement !== time) {
       populateTimeOptions(time, post.date, post.time || "");
     }
 
     var assignee = el.querySelector("#assignee-" + post.id);
-    if (locked) {
+    if (fieldsLocked) {
       assignee.textContent = post.assignee || "Nieprzypisane";
       applyAssigneeColor(assignee, post.assignee);
     } else if (document.activeElement !== assignee) {
@@ -1406,9 +1480,9 @@
 
     if (locked) {
       renderLockedLinkCell(el.querySelector("#link-" + post.id), post.link);
-    } else {
+    } else if (blockConfirmed || post.link) {
       var link = el.querySelector("#link-input-" + post.id);
-      if (document.activeElement !== link) {
+      if (link && document.activeElement !== link) {
         link.value = post.link || "";
         updateLinkOpen(el, post.link);
       }
@@ -1462,29 +1536,24 @@
     var assignee = assigneeWrap._input;
     metaRow.appendChild(assigneeWrap);
 
-    wrap.appendChild(metaRow);
-
-    var linkRow = document.createElement("div");
-    linkRow.className = "link-row";
-    var link = document.createElement("input");
-    link.type = "url";
-    link.id = "add-link-" + date;
-    link.className = "link-input";
-    link.placeholder = "Link do researchu…";
-    link.setAttribute("aria-label", "Link do researchu dla nowego posta");
-    linkRow.appendChild(link);
+    var submitRow = document.createElement("div");
+    submitRow.className = "add-submit-row";
+    var hint = document.createElement("span");
+    hint.className = "link-missing";
+    hint.textContent = "Link do researchu dodasz po zatwierdzeniu bloku.";
+    submitRow.appendChild(hint);
     var submit = document.createElement("button");
     submit.type = "submit";
     submit.textContent = "Dodaj";
-    linkRow.appendChild(submit);
-    wrap.appendChild(linkRow);
+    submitRow.appendChild(submit);
+    wrap.appendChild(submitRow);
 
     wrap.addEventListener("submit", function(e){
       e.preventDefault();
       var value = topic.value.trim();
       if (!value) return;
-      addPost(date, { topic: value, time: time.value, assignee: assignee.value, link: link.value });
-      topic.value = ""; time.value = ""; assignee.value = ""; link.value = "";
+      addPost(date, { topic: value, time: time.value, assignee: assignee.value });
+      topic.value = ""; time.value = ""; assignee.value = "";
       applyAssigneeColor(assignee, "");
       autoGrow(topic);
       topic.focus();
@@ -1686,6 +1755,11 @@
 
       posts.forEach(function(p, idx){
         var el = list.querySelector('[data-id="' + p.id + '"]');
+        if (el) {
+          var sameLocked = el.dataset.locked === (locked ? "1" : "0");
+          var sameConfirmed = el.dataset.confirmed === (p.confirmed ? "1" : "0");
+          if (!sameLocked || !sameConfirmed) { el.remove(); el = null; }
+        }
         if (!el) {
           el = buildCard(p, iso, locked);
         } else {
