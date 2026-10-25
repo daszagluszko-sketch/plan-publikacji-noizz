@@ -769,8 +769,12 @@
   }
 
   function applyPastState(el){
-    var past = isPostPastValues(el.dataset.date, el.dataset.time) && el.dataset.done !== "1";
-    el.classList.toggle("is-past", past);
+    var isPastTime = isPostPastValues(el.dataset.date, el.dataset.time);
+    var isDone = el.dataset.done === "1";
+    el.classList.toggle("is-past", isPastTime && !isDone);
+
+    var badge = el.querySelector(".block-confirmed-badge");
+    if (badge) badge.textContent = (isDone || isPastTime) ? "✓ Opublikowane" : "✓ Zaplanowane";
   }
 
   function timeSlots(weekend){
@@ -1174,7 +1178,7 @@
   function confirmBlock(id, topicVal, timeVal, assigneeVal){
     if (!state.db) return;
     if (!topicVal.trim() || !timeVal || !assigneeVal.trim()) {
-      toast("Uzupełnij tytuł, godzinę i osobę, aby zatwierdzić blok.", "error");
+      toast("Uzupełnij tytuł, godzinę i osobę, aby zaplanować blok.", "error");
       return;
     }
     var payload = { confirmed: true, updatedAt: new Date().toISOString(), updatedBy: state.myName || null };
@@ -1257,7 +1261,7 @@
     if (blockConfirmed && !locked) {
       var confirmBadge = document.createElement("div");
       confirmBadge.className = "lock-badge block-confirmed-badge";
-      confirmBadge.textContent = "✓ Zatwierdzone";
+      confirmBadge.textContent = (!!post.done || isPostPastValues(post.date || date, post.time)) ? "✓ Opublikowane" : "✓ Zaplanowane";
       el.appendChild(confirmBadge);
     }
 
@@ -1374,7 +1378,7 @@
     } else {
       var linkHint = document.createElement("span");
       linkHint.className = "link-missing";
-      linkHint.textContent = "Link będzie dostępny po zatwierdzeniu bloku.";
+      linkHint.textContent = "Link będzie dostępny po zaplanowaniu bloku.";
       linkRow.appendChild(linkHint);
     }
 
@@ -1395,8 +1399,8 @@
         var confirmBtn = document.createElement("button");
         confirmBtn.className = "confirm-block-btn";
         confirmBtn.type = "button";
-        confirmBtn.textContent = "Zatwierdź";
-        confirmBtn.title = "Zatwierdź blok i odblokuj link do researchu";
+        confirmBtn.textContent = "Zaplanuj";
+        confirmBtn.title = "Zaplanuj blok i odblokuj link do researchu";
         confirmBtn.addEventListener("click", function(){
           var topicVal = topic ? topic.value : (post.topic || "");
           var timeVal = time ? time.value : (post.time || "");
@@ -1556,7 +1560,7 @@
     submitRow.className = "add-submit-row";
     var hint = document.createElement("span");
     hint.className = "link-missing";
-    hint.textContent = "Link do researchu dodasz po zatwierdzeniu bloku.";
+    hint.textContent = "Link do researchu dodasz po zaplanowaniu bloku.";
     submitRow.appendChild(hint);
     var submit = document.createElement("button");
     submit.type = "submit";
