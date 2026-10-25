@@ -20,6 +20,7 @@
     --logo-ink:#ffffff;
     --ok:#157a3d;
     --warn:#9a5700;
+    --confirmed-bg:#eaf7f0;
     --font-display:'Unbounded','Arial Black',sans-serif;
     --font-body:'Mulish',system-ui,-apple-system,'Segoe UI',sans-serif;
     --radius:14px;
@@ -36,6 +37,7 @@
       --logo-ink:#000000;
       --ok:#3ddc84;
       --warn:#ffb13d;
+      --confirmed-bg:#102318;
     }
   }
   :root[data-theme="dark"]{
@@ -49,6 +51,7 @@
     --logo-ink:#000000;
     --ok:#3ddc84;
     --warn:#ffb13d;
+    --confirmed-bg:#102318;
   }
   *{box-sizing:border-box;}
   [hidden]{display:none !important;}
@@ -283,7 +286,13 @@
   }
   .card.is-example{border-style:dashed;}
   .card.is-locked{background:var(--surface-2);}
-  .card.is-block-confirmed{border-color:var(--ok);}
+  .card.is-block-confirmed{
+    background:var(--confirmed-bg);
+    border-color:var(--ok);
+    border-width:1.5px;
+    box-shadow:inset 3px 0 0 var(--ok);
+  }
+  .block-confirmed-badge{margin-top:-2px;}
   .card.is-done{opacity:0.6;}
   .card.is-done .topic-input,
   .card.is-done .topic-text{text-decoration:line-through;}
@@ -1243,6 +1252,13 @@
       badge.className = "example-badge";
       badge.textContent = "przykład";
       el.appendChild(badge);
+    }
+
+    if (blockConfirmed && !locked) {
+      var confirmBadge = document.createElement("div");
+      confirmBadge.className = "lock-badge block-confirmed-badge";
+      confirmBadge.textContent = "✓ Zatwierdzone";
+      el.appendChild(confirmBadge);
     }
 
     var row1 = document.createElement("div");
