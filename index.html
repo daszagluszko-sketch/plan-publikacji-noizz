@@ -298,7 +298,17 @@
     border-width:1.5px;
     box-shadow:inset 3px 0 0 var(--ok);
   }
-  .block-confirmed-badge{margin-top:-2px;}
+  .block-confirmed-badge{
+    margin-top:-2px;background:transparent;border:none;padding:0;
+    cursor:pointer;font-family:inherit;
+  }
+  .block-confirmed-badge::after{content:"▾";margin-left:3px;font-size:8px;}
+  .card.is-collapsed .block-confirmed-badge::after{content:"▸";}
+  .card.is-collapsed .meta-row,
+  .card.is-collapsed .link-row,
+  .card.is-collapsed .card-footer{display:none;}
+  .card.is-collapsed{gap:6px;}
+  .card.is-collapsed .topic-text{font-size:13px;}
   .card.is-done{opacity:0.6;}
   .card.is-done .topic-input,
   .card.is-done .topic-text{text-decoration:line-through;}
@@ -779,8 +789,15 @@
     var isDone = el.dataset.done === "1";
     el.classList.toggle("is-past", isPastTime && !isDone);
 
+    var published = isDone || isPastTime;
     var badge = el.querySelector(".block-confirmed-badge");
-    if (badge) badge.textContent = (isDone || isPastTime) ? "✓ Opublikowane" : "✓ Zaplanowane";
+    if (badge) badge.textContent = published ? "✓ Opublikowane" : "✓ Zaplanowane";
+
+    if (badge) {
+      var wasPublished = el.dataset.published === "1";
+      if (published && !wasPublished) el.classList.add("is-collapsed");
+      el.dataset.published = published ? "1" : "0";
+    }
   }
 
   function timeSlots(weekend){
@@ -1265,10 +1282,16 @@
     }
 
     if (blockConfirmed && !locked) {
-      var confirmBadge = document.createElement("div");
+      var isPublishedNow = !!post.done || isPostPastValues(post.date || date, post.time);
+      var confirmBadge = document.createElement("button");
+      confirmBadge.type = "button";
       confirmBadge.className = "lock-badge block-confirmed-badge";
-      confirmBadge.textContent = (!!post.done || isPostPastValues(post.date || date, post.time)) ? "✓ Opublikowane" : "✓ Zaplanowane";
+      confirmBadge.title = "Zwiń / rozwiń szczegóły";
+      confirmBadge.textContent = isPublishedNow ? "✓ Opublikowane" : "✓ Zaplanowane";
+      confirmBadge.addEventListener("click", function(){ el.classList.toggle("is-collapsed"); });
       el.appendChild(confirmBadge);
+      el.dataset.published = isPublishedNow ? "1" : "0";
+      if (isPublishedNow) el.classList.add("is-collapsed");
     }
 
     var row1 = document.createElement("div");
