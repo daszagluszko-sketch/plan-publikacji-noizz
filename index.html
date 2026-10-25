@@ -228,7 +228,7 @@
     scroll-snap-align:start;
     flex:0 0 84vw;
     max-width:320px;
-    background:var(--surface);
+    background:var(--bg);
     border:1px solid var(--border);
     border-radius:var(--radius);
     padding:12px;
@@ -272,24 +272,24 @@
   .cards{display:flex;flex-direction:column;gap:8px;}
 
   .card{
-    background:var(--bg);
+    background:var(--surface);
     border:1px solid var(--border);
     border-radius:10px;
-    padding:10px;
+    padding:12px;
     display:flex;
     flex-direction:column;
-    gap:8px;
+    gap:10px;
     position:relative;
   }
   .card.is-example{border-style:dashed;}
-  .card.is-locked{background:var(--surface);}
+  .card.is-locked{background:var(--surface-2);}
   .card.is-done{opacity:0.6;}
   .card.is-done .topic-input,
   .card.is-done .topic-text{text-decoration:line-through;}
   .card.is-past:not(.is-done){opacity:0.5;filter:grayscale(0.7);transition:opacity 0.3s,filter 0.3s;}
-  .topic-text{font-size:14px;font-weight:700;line-height:1.3;padding:2px 0;}
+  .topic-text{font-size:15px;font-weight:800;line-height:1.35;padding:2px 0;}
   .time-text{
-    background:var(--surface);border:1px solid var(--border);color:var(--text-muted);
+    background:var(--surface-2);border:1px solid var(--border);color:var(--text-muted);
     border-radius:7px;padding:4px 8px;font-size:12px;font-weight:800;
     font-variant-numeric:tabular-nums;
   }
@@ -298,7 +298,7 @@
   .link-missing{color:var(--text-muted);font-size:12px;font-style:italic;}
   .example-badge{
     position:absolute;top:-9px;right:8px;
-    background:var(--bg);
+    background:var(--surface);
     color:var(--text-muted);
     font-size:9px;letter-spacing:0.5px;text-transform:uppercase;
     padding:1px 6px;border:1px solid var(--border);border-radius:999px;
@@ -315,9 +315,9 @@
     background:transparent;
     border:none;
     color:var(--text);
-    font-size:14px;
-    font-weight:600;
-    line-height:1.3;
+    font-size:15px;
+    font-weight:700;
+    line-height:1.35;
     resize:none;
     padding:2px 0;
     min-height:20px;
@@ -325,7 +325,7 @@
   .topic-input::placeholder{color:var(--text-muted);font-weight:500;}
   .meta-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
   .time-input{
-    background:var(--surface);
+    background:var(--surface-2);
     border:1px solid var(--border);
     color:var(--text);
     border-radius:7px;
@@ -337,7 +337,7 @@
   .assignee-wrap{position:relative;flex:1 1 90px;min-width:0;}
   .assignee-input{
     width:100%;
-    background:var(--surface);
+    background:var(--surface-2);
     border:1px solid var(--border);
     border-radius:999px;
     padding:4px 10px;
@@ -364,7 +364,7 @@
   .link-input{
     flex:1;
     min-width:0;
-    background:var(--surface);
+    background:var(--surface-2);
     border:1px solid var(--border);
     color:var(--text);
     border-radius:7px;
@@ -373,7 +373,7 @@
   }
   .link-input::placeholder{color:var(--text-muted);}
   .link-open{
-    background:var(--surface);
+    background:var(--surface-2);
     border:1px solid var(--border);
     border-radius:7px;
     width:28px;height:28px;
@@ -384,11 +384,18 @@
     flex:0 0 auto;
   }
   .link-open[aria-disabled="true"]{opacity:0.35;pointer-events:none;}
-  .card-footer{display:flex;justify-content:space-between;align-items:center;gap:6px;}
-  .updated-by{font-size:10px;color:var(--text-muted);}
+  .card-footer{
+    display:flex;justify-content:space-between;align-items:center;gap:8px;
+    border-top:1px solid var(--border);padding-top:8px;margin-top:2px;
+  }
+  .updated-by{
+    font-size:10px;color:var(--text-muted);
+    flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
   .delete-btn{
     background:transparent;border:1px solid var(--border);color:var(--text-muted);
     font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px;
+    flex:0 0 auto;
   }
   .delete-btn:hover{color:var(--accent);border-color:var(--accent);}
   .delete-btn.is-confirm{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
