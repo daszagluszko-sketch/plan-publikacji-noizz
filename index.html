@@ -289,9 +289,13 @@
     flex-direction:column;
     gap:10px;
     position:relative;
+    cursor:grab;
+    transition:opacity 0.15s,box-shadow 0.15s;
   }
   .card.is-example{border-style:dashed;}
-  .card.is-locked{background:var(--surface-2);}
+  .card.is-locked{background:var(--surface-2);cursor:default;}
+  .card.is-dragging{opacity:0.4;cursor:grabbing;}
+  .card.is-drop-target{box-shadow:0 0 0 2px var(--accent) inset;}
   .card.is-block-confirmed{
     background:var(--confirmed-bg);
     border-color:var(--ok);
@@ -1192,6 +1196,49 @@
       .catch(function(){ toast("Nie udało się zapisać zmian — spróbuj ponownie.", "error"); });
   }
 
+  function swapPostTimes(idA, timeA, idB, timeB){
+    if (!state.db || idA === idB) return;
+    var now = new Date().toISOString();
+    var by = state.myName || null;
+    var batch = state.db.batch();
+    batch.update(state.db.collection("posts").doc(idA), { time: timeB, updatedAt: now, updatedBy: by });
+    batch.update(state.db.collection("posts").doc(idB), { time: timeA, updatedAt: now, updatedBy: by });
+    batch.commit().catch(function(){ toast("Nie udało się zamienić godzin.", "error"); });
+  }
+
+  function wireDragAndDrop(el, post){
+    el.draggable = true;
+    el.addEventListener("dragstart", function(e){
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", post.id);
+      el.classList.add("is-dragging");
+    });
+    el.addEventListener("dragend", function(){
+      el.classList.remove("is-dragging");
+    });
+    el.addEventListener("dragover", function(e){
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      if (!el.classList.contains("is-dragging")) el.classList.add("is-drop-target");
+    });
+    el.addEventListener("dragleave", function(){
+      el.classList.remove("is-drop-target");
+    });
+    el.addEventListener("drop", function(e){
+      e.preventDefault();
+      el.classList.remove("is-drop-target");
+      var sourceId = e.dataTransfer.getData("text/plain");
+      if (!sourceId || sourceId === post.id) return;
+      var sourceEl = document.querySelector('.card[data-id="' + sourceId + '"]');
+      if (!sourceEl) return;
+      if (sourceEl.dataset.date !== el.dataset.date) {
+        toast("Zamiana godzin działa tylko w obrębie tego samego dnia.", "error");
+        return;
+      }
+      swapPostTimes(sourceId, sourceEl.dataset.time || "", post.id, post.time || "");
+    });
+  }
+
   function deletePost(id){
     if (!state.db) return;
     state.db.collection("posts").doc(id).delete()
@@ -1273,6 +1320,8 @@
     el.dataset.updatedBy = post.updatedBy || "";
     el.dataset.updatedAt = post.updatedAt || "";
     applyPastState(el);
+
+    if (!state.readOnly && !locked) wireDragAndDrop(el, post);
 
     if (post.example) {
       var badge = document.createElement("span");
