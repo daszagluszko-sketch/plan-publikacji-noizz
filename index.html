@@ -513,11 +513,49 @@
     flex:0 0 auto;background:var(--accent);color:var(--accent-ink);border:none;
     border-radius:8px;padding:8px 14px;font-weight:800;font-size:13px;
   }
+
+  .gate{
+    position:fixed;inset:0;z-index:100;
+    background:var(--bg);color:var(--text);
+    display:flex;align-items:center;justify-content:center;
+    padding:24px;
+  }
+  .gate-box{width:100%;max-width:340px;text-align:center;}
+  .gate-logo{
+    display:inline-block;background:var(--logo-bg);color:var(--logo-ink);
+    font-family:var(--font-display);font-weight:900;font-size:22px;
+    letter-spacing:-0.02em;padding:8px 14px;margin-bottom:18px;
+  }
+  .gate-box h1{font-family:var(--font-display);font-weight:800;font-size:22px;margin-bottom:6px;}
+  .gate-box .hint{color:var(--text-muted);font-size:14px;margin-bottom:20px;}
+  #gateForm{display:flex;flex-direction:column;gap:10px;}
+  #gateForm input{
+    padding:12px 14px;border-radius:10px;border:1px solid var(--border);
+    background:var(--surface);color:var(--text);font-size:16px;text-align:center;
+  }
+  #gateForm button{
+    background:var(--accent);color:var(--accent-ink);border:none;
+    border-radius:10px;padding:12px 14px;font-weight:800;font-size:15px;
+  }
+  .gate-error{color:var(--accent);font-size:13px;margin-top:14px;font-weight:700;}
 </style>
 </head>
 <body>
 
-<div class="app">
+<div class="gate" id="gate">
+  <div class="gate-box">
+    <div class="gate-logo">NOIZZ</div>
+    <h1>Plan publikacji</h1>
+    <p class="hint">Podaj hasło zespołu, aby wejść.</p>
+    <form id="gateForm">
+      <input type="password" id="gateInput" placeholder="Hasło" autocomplete="off" required />
+      <button type="submit">Wejdź</button>
+    </form>
+    <p class="gate-error" id="gateError" hidden>Błędne hasło — spróbuj ponownie.</p>
+  </div>
+</div>
+
+<div class="app" id="app" hidden>
   <header class="topbar">
     <div class="brand">
       <span class="brand-mark">NOIZZ</span>
@@ -593,6 +631,54 @@
       document.documentElement.setAttribute("data-theme", storedTheme);
     }
   } catch (e) {}
+
+  var GATE_KEY = "plan-publikacji-unlocked";
+  var GATE_HASH = "081468b44defa72e11647915834730ff7ef02cf39c03616201681f2cd78f6efb";
+
+  function sha256Hex(text){
+    var data = new TextEncoder().encode(text);
+    return crypto.subtle.digest("SHA-256", data).then(function(buf){
+      var bytes = Array.from(new Uint8Array(buf));
+      return bytes.map(function(b){ return b.toString(16).padStart(2, "0"); }).join("");
+    });
+  }
+
+  function isGateUnlocked(){
+    try { return localStorage.getItem(GATE_KEY) === "1"; } catch (e) { return false; }
+  }
+
+  function unlockGate(){
+    try { localStorage.setItem(GATE_KEY, "1"); } catch (e) {}
+    document.getElementById("gate").hidden = true;
+    document.getElementById("app").hidden = false;
+    boot();
+  }
+
+  function initGate(){
+    if (isGateUnlocked()) {
+      unlockGate();
+      return;
+    }
+    document.getElementById("gate").hidden = false;
+    document.getElementById("gateForm").addEventListener("submit", function(e){
+      e.preventDefault();
+      var input = document.getElementById("gateInput");
+      var errorEl = document.getElementById("gateError");
+      var submitBtn = e.target.querySelector("button[type=submit]");
+      submitBtn.disabled = true;
+      sha256Hex(input.value).then(function(hash){
+        submitBtn.disabled = false;
+        if (hash === GATE_HASH) {
+          errorEl.hidden = true;
+          unlockGate();
+        } else {
+          errorEl.hidden = false;
+          input.value = "";
+          input.focus();
+        }
+      });
+    });
+  }
 
   var PALETTE = ["#5C7A99","#B5707A","#7A9169","#BF9456","#8C7AA3","#5E9499","#B97A5E","#6E7681"];
   var WEEKDAYS_FULL = ["Poniedziałek","Wtorek","Środa","Czwartek","Piątek","Sobota","Niedziela"];
@@ -1793,6 +1879,6 @@
     subscribeWeek();
   }
 
-  boot();
+  initGate();
 })();
 </script>
