@@ -76,7 +76,7 @@
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 
   .app{
-    max-width:1400px;margin:0 auto;padding-block:16px 48px;
+    max-width:1680px;margin:0 auto;padding-block:16px 48px;
     min-height:100vh;display:flex;flex-direction:column;
   }
 
@@ -390,7 +390,18 @@
   .assignee-suggest button:hover,
   .assignee-suggest button.is-highlighted{background:var(--surface-2);}
   .assignee-suggest .suggest-empty{color:var(--text-muted);font-size:11px;font-weight:500;padding:6px 8px;}
-  .link-row{display:flex;gap:6px;align-items:center;}
+  .link-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .link-display{font-size:13px;}
+  .link-edit-btn{
+    background:transparent;border:1px solid var(--border);color:var(--text-muted);
+    border-radius:7px;width:24px;height:24px;font-size:11px;
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+  }
+  .link-edit-btn:hover{color:var(--text);border-color:var(--text);}
+  .link-row:not(.is-editing) .link-input,
+  .link-row:not(.is-editing) .link-open{display:none;}
+  .link-row.is-editing .link-display,
+  .link-row.is-editing .link-edit-btn{display:none;}
   .link-input{
     flex:1;
     min-width:0;
@@ -540,7 +551,7 @@
     .theme-opt{padding:8px 9px;font-size:11px;}
   }
   @media (min-width:881px){
-    .day-col{flex:1 1 220px;min-width:220px;}
+    .day-col{flex:1 1 260px;min-width:260px;}
   }
 
   .whoami-btn{
@@ -1430,6 +1441,18 @@
     if (locked) {
       renderLockedLinkCell(linkRow, post.link);
     } else if (blockConfirmed || post.link) {
+      var linkDisplay = document.createElement("a");
+      linkDisplay.className = "link-open-text link-display";
+      linkDisplay.id = "link-display-" + post.id;
+      linkDisplay.target = "_blank";
+      linkDisplay.rel = "noopener noreferrer";
+
+      var linkEditBtn = document.createElement("button");
+      linkEditBtn.type = "button";
+      linkEditBtn.className = "link-edit-btn";
+      linkEditBtn.title = "Edytuj link";
+      linkEditBtn.textContent = "✎";
+
       var link = document.createElement("input");
       link.type = "url";
       link.id = "link-input-" + post.id;
@@ -1438,11 +1461,6 @@
       link.setAttribute("aria-label", "Link do researchu");
       link.value = post.link || "";
       link.readOnly = state.readOnly;
-      link.addEventListener("input", function(){
-        patchPost(post.id + ":link", post.id, "link", link.value);
-        updateLinkOpen(el, link.value);
-      });
-      linkRow.appendChild(link);
 
       var open = document.createElement("a");
       open.className = "link-open";
@@ -1451,8 +1469,40 @@
       open.rel = "noopener noreferrer";
       open.setAttribute("aria-label", "Otwórz link researchu");
       open.textContent = "↗";
-      linkRow.appendChild(open);
+
+      var refreshLinkDisplay = function(url){
+        if (url) {
+          linkDisplay.href = url;
+          linkDisplay.textContent = "Research ↗";
+          linkDisplay.hidden = false;
+        } else {
+          linkDisplay.removeAttribute("href");
+          linkDisplay.textContent = "";
+          linkDisplay.hidden = true;
+        }
+        linkEditBtn.hidden = !url;
+      };
+      refreshLinkDisplay(post.link);
+      if (!post.link) linkRow.classList.add("is-editing");
+
+      link.addEventListener("input", function(){
+        patchPost(post.id + ":link", post.id, "link", link.value);
+        updateLinkOpen(el, link.value, open);
+        refreshLinkDisplay(link.value);
+      });
+      link.addEventListener("blur", function(){
+        if (link.value) linkRow.classList.remove("is-editing");
+      });
+      linkEditBtn.addEventListener("click", function(){
+        linkRow.classList.add("is-editing");
+        link.focus();
+      });
       updateLinkOpen(el, post.link, open);
+
+      linkRow.appendChild(linkDisplay);
+      linkRow.appendChild(linkEditBtn);
+      linkRow.appendChild(link);
+      linkRow.appendChild(open);
     } else {
       var linkHint = document.createElement("span");
       linkHint.className = "link-missing";
@@ -1583,6 +1633,22 @@
       if (link && document.activeElement !== link) {
         link.value = post.link || "";
         updateLinkOpen(el, post.link);
+        var linkDisplayEl = el.querySelector("#link-display-" + post.id);
+        var linkRowEl = el.querySelector("#link-" + post.id);
+        var editBtnEl = linkRowEl ? linkRowEl.querySelector(".link-edit-btn") : null;
+        if (linkDisplayEl) {
+          if (post.link) {
+            linkDisplayEl.href = post.link;
+            linkDisplayEl.textContent = "Research ↗";
+            linkDisplayEl.hidden = false;
+            if (linkRowEl) linkRowEl.classList.remove("is-editing");
+          } else {
+            linkDisplayEl.removeAttribute("href");
+            linkDisplayEl.textContent = "";
+            linkDisplayEl.hidden = true;
+          }
+        }
+        if (editBtnEl) editBtnEl.hidden = !post.link;
       }
     }
 
