@@ -76,7 +76,7 @@
   :focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
 
   .app{
-    max-width:1680px;margin:0 auto;padding-block:16px 48px;
+    max-width:1960px;margin:0 auto;padding-block:16px 48px;
     min-height:100vh;display:flex;flex-direction:column;
   }
 
@@ -284,10 +284,10 @@
     background:var(--surface);
     border:1px solid var(--border);
     border-radius:10px;
-    padding:12px;
+    padding:10px 14px;
     display:flex;
     flex-direction:column;
-    gap:10px;
+    gap:7px;
     position:relative;
     cursor:grab;
     transition:opacity 0.15s,box-shadow 0.15s;
@@ -377,6 +377,7 @@
     flex:1 1 90px;
   }
   .assignee-input::placeholder{color:var(--text-muted);font-weight:600;}
+  .assignee-text-static{flex:0 1 auto;width:auto;white-space:nowrap;}
   .assignee-suggest{
     position:absolute;top:calc(100% + 4px);left:0;z-index:30;
     min-width:140px;max-width:220px;max-height:180px;overflow-y:auto;
@@ -390,7 +391,8 @@
   .assignee-suggest button:hover,
   .assignee-suggest button.is-highlighted{background:var(--surface-2);}
   .assignee-suggest .suggest-empty{color:var(--text-muted);font-size:11px;font-weight:500;padding:6px 8px;}
-  .link-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
+  .link-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex:0 1 auto;min-width:0;}
+  .link-row.is-editing{flex:1 1 150px;min-width:140px;}
   .link-display{font-size:13px;}
   .link-edit-btn{
     background:transparent;border:1px solid var(--border);color:var(--text-muted);
@@ -427,7 +429,7 @@
   .link-open[aria-disabled="true"]{opacity:0.35;pointer-events:none;}
   .card-footer{
     display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
-    border-top:1px solid var(--border);padding-top:8px;margin-top:2px;
+    border-top:1px solid var(--border);padding-top:6px;
   }
   .updated-by{
     font-size:10px;color:var(--text-muted);
@@ -551,7 +553,7 @@
     .theme-opt{padding:8px 9px;font-size:11px;}
   }
   @media (min-width:881px){
-    .day-col{flex:1 1 260px;min-width:260px;}
+    .day-col{flex:1 1 300px;min-width:300px;}
   }
 
   .whoami-btn{
@@ -806,7 +808,10 @@
 
     var published = isDone || isPastTime;
     var badge = el.querySelector(".block-confirmed-badge");
-    if (badge) badge.textContent = published ? "✓ Opublikowane" : "✓ Zaplanowane";
+    if (badge) {
+      var assignee = el.dataset.assignee || "";
+      badge.textContent = published ? ("✓ Opublikowane" + (assignee ? " · " + assignee : "")) : "✓ Zaplanowane";
+    }
 
     if (badge) {
       var wasPublished = el.dataset.published === "1";
@@ -1328,6 +1333,7 @@
     el.dataset.date = post.date || date;
     el.dataset.time = post.time || "";
     el.dataset.done = post.done ? "1" : "0";
+    el.dataset.assignee = post.assignee || "";
     el.dataset.updatedBy = post.updatedBy || "";
     el.dataset.updatedAt = post.updatedAt || "";
     applyPastState(el);
@@ -1347,7 +1353,7 @@
       confirmBadge.type = "button";
       confirmBadge.className = "lock-badge block-confirmed-badge";
       confirmBadge.title = "Zwiń / rozwiń szczegóły";
-      confirmBadge.textContent = isPublishedNow ? "✓ Opublikowane" : "✓ Zaplanowane";
+      confirmBadge.textContent = isPublishedNow ? ("✓ Opublikowane" + (post.assignee ? " · " + post.assignee : "")) : "✓ Zaplanowane";
       confirmBadge.addEventListener("click", function(){ el.classList.toggle("is-collapsed"); });
       el.appendChild(confirmBadge);
       el.dataset.published = isPublishedNow ? "1" : "0";
@@ -1407,7 +1413,7 @@
 
       var assigneeText = document.createElement("span");
       assigneeText.id = "assignee-" + post.id;
-      assigneeText.className = "assignee-input";
+      assigneeText.className = "assignee-input assignee-text-static";
       assigneeText.textContent = post.assignee || "Nieprzypisane";
       applyAssigneeColor(assigneeText, post.assignee);
       metaRow.appendChild(assigneeText);
@@ -1431,8 +1437,6 @@
       });
       metaRow.appendChild(assigneeWrap);
     }
-
-    el.appendChild(metaRow);
 
     var linkRow = document.createElement("div");
     linkRow.className = "link-row";
@@ -1510,7 +1514,8 @@
       linkRow.appendChild(linkHint);
     }
 
-    el.appendChild(linkRow);
+    metaRow.appendChild(linkRow);
+    el.appendChild(metaRow);
 
     var footer = document.createElement("div");
     footer.className = "card-footer";
@@ -1652,6 +1657,7 @@
       }
     }
 
+    el.dataset.assignee = post.assignee || "";
     el.dataset.updatedBy = post.updatedBy || "";
     el.dataset.updatedAt = post.updatedAt || "";
     el.dataset.date = post.date || "";
