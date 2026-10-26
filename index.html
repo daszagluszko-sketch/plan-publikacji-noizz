@@ -244,6 +244,7 @@
     min-height:160px;
   }
   .day-col.is-today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+  .day-col.is-col-drop-target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset;}
   .day-col.is-weekend{background:var(--weekend-bg);}
   .day-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
   .day-head .weekday-wrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
@@ -1212,14 +1213,23 @@
       .catch(function(){ toast("Nie udało się zapisać zmian — spróbuj ponownie.", "error"); });
   }
 
-  function swapPostTimes(idA, timeA, idB, timeB){
+  function swapPostSlots(idA, dateA, timeA, idB, dateB, timeB){
     if (!state.db || idA === idB) return;
     var now = new Date().toISOString();
     var by = state.myName || null;
     var batch = state.db.batch();
-    batch.update(state.db.collection("posts").doc(idA), { time: timeB, updatedAt: now, updatedBy: by });
-    batch.update(state.db.collection("posts").doc(idB), { time: timeA, updatedAt: now, updatedBy: by });
-    batch.commit().catch(function(){ toast("Nie udało się zamienić godzin.", "error"); });
+    batch.update(state.db.collection("posts").doc(idA), { date: dateB, time: timeB, updatedAt: now, updatedBy: by });
+    batch.update(state.db.collection("posts").doc(idB), { date: dateA, time: timeA, updatedAt: now, updatedBy: by });
+    batch.commit().catch(function(){ toast("Nie udało się zamienić miejsc.", "error"); });
+  }
+
+  function movePostToDate(id, newDate){
+    if (!state.db) return;
+    state.db.collection("posts").doc(id).update({
+      date: newDate,
+      updatedAt: new Date().toISOString(),
+      updatedBy: state.myName || null
+    }).catch(function(){ toast("Nie udało się przenieść posta.", "error"); });
   }
 
   function wireDragAndDrop(el, post){
@@ -1242,16 +1252,16 @@
     });
     el.addEventListener("drop", function(e){
       e.preventDefault();
+      e.stopPropagation();
       el.classList.remove("is-drop-target");
       var sourceId = e.dataTransfer.getData("text/plain");
       if (!sourceId || sourceId === post.id) return;
       var sourceEl = document.querySelector('.card[data-id="' + sourceId + '"]');
       if (!sourceEl) return;
-      if (sourceEl.dataset.date !== el.dataset.date) {
-        toast("Zamiana godzin działa tylko w obrębie tego samego dnia.", "error");
-        return;
-      }
-      swapPostTimes(sourceId, sourceEl.dataset.time || "", post.id, post.time || "");
+      swapPostSlots(
+        sourceId, sourceEl.dataset.date || "", sourceEl.dataset.time || "",
+        post.id, post.date || date, post.time || ""
+      );
     });
   }
 
@@ -1788,6 +1798,30 @@
       var cards = document.createElement("div");
       cards.className = "cards";
       col.appendChild(cards);
+
+      if (!state.readOnly) {
+        col.addEventListener("dragover", function(e){
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          col.classList.add("is-col-drop-target");
+        });
+        col.addEventListener("dragleave", function(e){
+          if (!col.contains(e.relatedTarget)) col.classList.remove("is-col-drop-target");
+        });
+        col.addEventListener("drop", function(e){
+          e.preventDefault();
+          col.classList.remove("is-col-drop-target");
+          var sourceId = e.dataTransfer.getData("text/plain");
+          if (!sourceId) return;
+          var sourceEl = document.querySelector('.card[data-id="' + sourceId + '"]');
+          if (!sourceEl || sourceEl.dataset.date === iso) return;
+          if (state.dayStatus[iso] && state.dayStatus[iso].confirmed) {
+            toast("Nie można przenieść posta na zatwierdzony dzień.", "error");
+            return;
+          }
+          movePostToDate(sourceId, iso);
+        });
+      }
 
       col.appendChild(buildAddRow(iso));
 
