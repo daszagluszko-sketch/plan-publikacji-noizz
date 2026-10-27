@@ -499,6 +499,26 @@
   }
   .modal h2{font-size:18px;margin-bottom:6px;}
   .modal .hint{color:var(--text-muted);font-size:12px;margin:0 0 14px;line-height:1.5;}
+  .modal-wide{max-width:640px;}
+  .admin-subtitle{font-size:14px;font-weight:800;margin:4px 0 10px;}
+  .admin-report{
+    border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px;background:var(--surface);
+  }
+  .admin-report-row{display:flex;gap:8px;flex-wrap:wrap;}
+  .admin-report-row input[type=month]{
+    flex:1 1 160px;min-width:0;padding:8px 10px;border-radius:8px;
+    border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;
+  }
+  .admin-report-row button{
+    flex:0 0 auto;background:var(--accent);color:var(--accent-ink);border:none;
+    border-radius:8px;padding:8px 14px;font-weight:800;font-size:13px;
+  }
+  .history-list{display:flex;flex-direction:column;gap:6px;max-height:320px;overflow-y:auto;}
+  .history-entry{
+    border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;background:var(--surface);
+  }
+  .history-entry .history-meta{color:var(--text-muted);font-size:10px;margin-top:2px;}
+  .history-entry b{font-weight:800;}
   #teamList{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:6px;}
   #teamList li{display:flex;align-items:center;gap:8px;}
   .swatch{width:12px;height:12px;border-radius:50%;flex:0 0 auto;}
@@ -543,6 +563,7 @@
     .brand{order:1;}
     .team-btn{order:2;}
     .whoami-btn{order:2;}
+    .admin-btn{order:2;}
     .theme-switch{order:2;}
     .week-nav{order:3;flex-basis:100%;margin-left:0;justify-content:center;}
     .week-range{min-width:0;}
@@ -557,6 +578,13 @@
     .day-col{flex:1 1 300px;min-width:300px;}
   }
 
+  .admin-btn{
+    font-size:14px;background:var(--surface);
+    border:1px solid var(--border);color:var(--text-muted);
+    border-radius:999px;width:34px;height:34px;flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .admin-btn:hover{color:var(--text);border-color:var(--text);}
   .whoami-btn{
     font-size:12px;font-weight:700;background:var(--surface);
     border:1px solid var(--border);color:var(--text);
@@ -633,6 +661,7 @@
     </div>
     <button class="team-btn" id="teamBtn" type="button">Zespół <span class="count" id="teamCount">0</span></button>
     <button class="whoami-btn" id="whoamiBtn" type="button">👤 <span id="whoamiLabel">Kto edytuje?</span></button>
+    <button class="admin-btn" id="adminBtn" type="button" title="Panel administratora">🔒</button>
     <div class="theme-switch" role="group" aria-label="Wybierz tryb wyświetlania">
       <button type="button" class="theme-opt" id="themeLight">Jasny</button>
       <button type="button" class="theme-opt" id="themeDark">Ciemny</button>
@@ -676,6 +705,40 @@
       <button type="submit">Zapisz</button>
     </form>
     <button class="btn-ghost" id="whoamiModalClose" type="button">Zamknij</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="adminGateBackdrop" hidden>
+  <div class="modal" role="dialog" aria-labelledby="adminGateTitle">
+    <h2 id="adminGateTitle">Panel administratora</h2>
+    <p class="hint">Podaj hasło administratora, aby zobaczyć historię zmian i pobrać raport.</p>
+    <form id="adminGateForm">
+      <input type="password" id="adminGateInput" placeholder="Hasło administratora" autocomplete="off" required />
+      <button type="submit">Wejdź</button>
+    </form>
+    <p class="gate-error" id="adminGateError" hidden>Błędne hasło.</p>
+    <button class="btn-ghost" id="adminGateClose" type="button">Zamknij</button>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="adminPanelBackdrop" hidden>
+  <div class="modal modal-wide" role="dialog" aria-labelledby="adminPanelTitle">
+    <h2 id="adminPanelTitle">Panel administratora</h2>
+
+    <div class="admin-report">
+      <p class="hint">Raport miesięczny — liczba postów przypisanych do każdej osoby.</p>
+      <div class="admin-report-row">
+        <input type="month" id="reportMonth" />
+        <button type="button" id="reportBtn">Pobierz raport (CSV)</button>
+      </div>
+    </div>
+
+    <h3 class="admin-subtitle">Historia zmian</h3>
+    <div class="history-list" id="historyList">
+      <p class="empty-note">Wczytywanie…</p>
+    </div>
+
+    <button class="btn-ghost" id="adminPanelClose" type="button">Zamknij</button>
   </div>
 </div>
 
@@ -1193,43 +1256,75 @@
 
   // ---------- posts / board ----------
 
-  var patchPost = debounce(function(id, field, value){
+  var FIELD_LABELS = { topic: "temat", time: "godzina", assignee: "osoba", link: "link" };
+
+  function logHistory(action, info){
+    if (!state.db) return;
+    var payload = {
+      action: action,
+      by: state.myName || null,
+      at: new Date().toISOString()
+    };
+    for (var k in info) { if (info.hasOwnProperty(k)) payload[k] = info[k]; }
+    state.db.collection("history").add(payload).catch(function(){});
+  }
+
+  var patchPost = debounce(function(id, field, value, topicSnapshot){
     if (!state.db) return;
     var payload = {};
     payload[field] = value;
     payload.updatedAt = new Date().toISOString();
     payload.updatedBy = state.myName || null;
     state.db.collection("posts").doc(id).update(payload)
+      .then(function(){
+        logHistory("edit", { postId: id, topic: topicSnapshot || "", field: field, fieldLabel: FIELD_LABELS[field] || field, value: value });
+      })
       .catch(function(){ toast("Nie udało się zapisać zmian — spróbuj ponownie.", "error"); });
   }, 500);
 
-  function patchPostNow(id, field, value){
+  function patchPostNow(id, field, value, topicSnapshot){
     if (!state.db) return;
     var payload = {};
     payload[field] = value;
     payload.updatedAt = new Date().toISOString();
     payload.updatedBy = state.myName || null;
     state.db.collection("posts").doc(id).update(payload)
+      .then(function(){
+        if (field === "done") {
+          logHistory(value ? "published" : "unpublished", { postId: id, topic: topicSnapshot || "" });
+        } else {
+          logHistory("edit", { postId: id, topic: topicSnapshot || "", field: field, fieldLabel: FIELD_LABELS[field] || field, value: value });
+        }
+      })
       .catch(function(){ toast("Nie udało się zapisać zmian — spróbuj ponownie.", "error"); });
   }
 
-  function swapPostSlots(idA, dateA, timeA, idB, dateB, timeB){
+  function swapPostSlots(idA, dateA, timeA, idB, dateB, timeB, topicA, topicB){
     if (!state.db || idA === idB) return;
     var now = new Date().toISOString();
     var by = state.myName || null;
     var batch = state.db.batch();
     batch.update(state.db.collection("posts").doc(idA), { date: dateB, time: timeB, updatedAt: now, updatedBy: by });
     batch.update(state.db.collection("posts").doc(idB), { date: dateA, time: timeA, updatedAt: now, updatedBy: by });
-    batch.commit().catch(function(){ toast("Nie udało się zamienić miejsc.", "error"); });
+    batch.commit()
+      .then(function(){
+        logHistory("moved", { postId: idA, topic: topicA || "", fromDate: dateA, fromTime: timeA, toDate: dateB, toTime: timeB });
+        logHistory("moved", { postId: idB, topic: topicB || "", fromDate: dateB, fromTime: timeB, toDate: dateA, toTime: timeA });
+      })
+      .catch(function(){ toast("Nie udało się zamienić miejsc.", "error"); });
   }
 
-  function movePostToDate(id, newDate){
+  function movePostToDate(id, newDate, topicSnapshot, oldDate){
     if (!state.db) return;
     state.db.collection("posts").doc(id).update({
       date: newDate,
       updatedAt: new Date().toISOString(),
       updatedBy: state.myName || null
-    }).catch(function(){ toast("Nie udało się przenieść posta.", "error"); });
+    })
+      .then(function(){
+        logHistory("moved", { postId: id, topic: topicSnapshot || "", fromDate: oldDate || "", toDate: newDate });
+      })
+      .catch(function(){ toast("Nie udało się przenieść posta.", "error"); });
   }
 
   function wireDragAndDrop(el, post){
@@ -1260,14 +1355,17 @@
       if (!sourceEl) return;
       swapPostSlots(
         sourceId, sourceEl.dataset.date || "", sourceEl.dataset.time || "",
-        post.id, post.date || date, post.time || ""
+        post.id, post.date || date, post.time || "",
+        (sourceEl.querySelector(".topic-text,.topic-input") || {}).textContent || (sourceEl.querySelector(".topic-input") || {}).value || "",
+        post.topic || ""
       );
     });
   }
 
-  function deletePost(id){
+  function deletePost(id, topicSnapshot){
     if (!state.db) return;
     state.db.collection("posts").doc(id).delete()
+      .then(function(){ logHistory("deleted", { postId: id, topic: topicSnapshot || "" }); })
       .catch(function(){ toast("Nie udało się usunąć posta.", "error"); });
   }
 
@@ -1279,13 +1377,15 @@
     }
     var payload = { confirmed: true, updatedAt: new Date().toISOString(), updatedBy: state.myName || null };
     state.db.collection("posts").doc(id).update(payload)
+      .then(function(){ logHistory("confirmed", { postId: id, topic: topicVal }); })
       .catch(function(){ toast("Nie udało się zatwierdzić bloku.", "error"); });
   }
 
-  function unconfirmBlock(id){
+  function unconfirmBlock(id, topicSnapshot){
     if (!state.db) return;
     var payload = { confirmed: false, updatedAt: new Date().toISOString(), updatedBy: state.myName || null };
     state.db.collection("posts").doc(id).update(payload)
+      .then(function(){ logHistory("unconfirmed", { postId: id, topic: topicSnapshot || "" }); })
       .catch(function(){ toast("Nie udało się cofnąć zatwierdzenia.", "error"); });
   }
 
@@ -1304,6 +1404,7 @@
       updatedBy: state.myName || null
     };
     state.db.collection("posts").add(payload)
+      .then(function(ref){ logHistory("created", { postId: ref.id, topic: payload.topic }); })
       .catch(function(){ toast("Nie udało się dodać posta — spróbuj ponownie.", "error"); });
   }
 
@@ -1311,6 +1412,7 @@
     if (!state.db) return;
     var payload = { date: iso, confirmed: confirmed, confirmedAt: new Date().toISOString(), confirmedBy: state.myName || null };
     state.db.doc("days/" + iso).set(payload)
+      .then(function(){ logHistory(confirmed ? "day_locked" : "day_unlocked", { date: iso }); })
       .catch(function(){ toast("Nie udało się zaktualizować statusu dnia.", "error"); });
   }
 
@@ -1383,7 +1485,7 @@
     done.disabled = state.readOnly;
     done.addEventListener("change", function(){
       el.classList.toggle("is-done", done.checked);
-      patchPostNow(post.id, "done", done.checked);
+      patchPostNow(post.id, "done", done.checked, post.topic || "");
     });
     row1.appendChild(done);
 
@@ -1404,7 +1506,7 @@
       topic.readOnly = state.readOnly;
       topic.addEventListener("input", function(){
         autoGrow(topic);
-        patchPost(post.id + ":topic", post.id, "topic", topic.value);
+        patchPost(post.id + ":topic", post.id, "topic", topic.value, topic.value);
       });
       autoGrow(topic);
       row1.appendChild(topic);
@@ -1434,7 +1536,7 @@
       time.setAttribute("aria-label", "Godzina publikacji");
       populateTimeOptions(time, post.date || date, post.time || "");
       time.disabled = state.readOnly;
-      time.addEventListener("change", function(){ patchPostNow(post.id, "time", time.value); });
+      time.addEventListener("change", function(){ patchPostNow(post.id, "time", time.value, post.topic || ""); });
       metaRow.appendChild(time);
 
       var assigneeWrap = buildAssigneeField({
@@ -1443,7 +1545,7 @@
         placeholder: "Kto?",
         initialValue: post.assignee || "",
         readOnly: state.readOnly,
-        onInput: function(value){ patchPost(post.id + ":assignee", post.id, "assignee", value); }
+        onInput: function(value){ patchPost(post.id + ":assignee", post.id, "assignee", value, post.topic || ""); }
       });
       metaRow.appendChild(assigneeWrap);
     }
@@ -1500,7 +1602,7 @@
       if (!post.link) linkRow.classList.add("is-editing");
 
       link.addEventListener("input", function(){
-        patchPost(post.id + ":link", post.id, "link", link.value);
+        patchPost(post.id + ":link", post.id, "link", link.value, post.topic || "");
         updateLinkOpen(el, link.value, open);
         refreshLinkDisplay(link.value);
       });
@@ -1557,7 +1659,7 @@
         editBtn.type = "button";
         editBtn.textContent = "Edytuj";
         editBtn.title = "Odblokuj blok do edycji";
-        editBtn.addEventListener("click", function(){ unconfirmBlock(post.id); });
+        editBtn.addEventListener("click", function(){ unconfirmBlock(post.id, post.topic || ""); });
         actions.appendChild(editBtn);
       }
     }
@@ -1572,7 +1674,7 @@
       del.addEventListener("click", function(){
         if (del.classList.contains("is-confirm")) {
           clearTimeout(delConfirmTimer);
-          deletePost(post.id);
+          deletePost(post.id, post.topic || "");
           return;
         }
         del.classList.add("is-confirm");
@@ -1819,7 +1921,8 @@
             toast("Nie można przenieść posta na zatwierdzony dzień.", "error");
             return;
           }
-          movePostToDate(sourceId, iso);
+          var sourceTopic = (sourceEl.querySelector(".topic-text") || {}).textContent || (sourceEl.querySelector(".topic-input") || {}).value || "";
+          movePostToDate(sourceId, iso, sourceTopic, sourceEl.dataset.date || "");
         });
       }
 
@@ -2133,6 +2236,172 @@
     if (!state.myName) openModal();
   }
 
+  var ADMIN_HASH = "fa0fdd6f1c979d680cd19cd9a6c7b78cd1422ff0864f2de7e33d2798676723db";
+  var ADMIN_UNLOCK_KEY = "plan-publikacji-admin-unlocked";
+  var HISTORY_ACTION_LABELS = {
+    created: "dodał(a) temat",
+    deleted: "usunął(ęła) temat",
+    confirmed: "zaplanował(a) blok",
+    unconfirmed: "cofnął(ęła) zaplanowanie bloku",
+    published: "oznaczył(a) jako opublikowane",
+    unpublished: "cofnął(ęła) oznaczenie opublikowania",
+    moved: "przeniósł/przeniosła temat",
+    day_locked: "zatwierdził(a) dzień",
+    day_unlocked: "cofnął(ęła) zatwierdzenie dnia"
+  };
+
+  function isAdminUnlocked(){
+    try { return localStorage.getItem(ADMIN_UNLOCK_KEY) === "1"; } catch (e) { return false; }
+  }
+
+  function describeHistoryEntry(entry){
+    var who = entry.by || "Ktoś";
+    var when = entry.at ? new Date(entry.at).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+    var label = HISTORY_ACTION_LABELS[entry.action] || entry.action || "zmienił(a) coś";
+    var detail = "";
+    if (entry.action === "edit") {
+      detail = " (" + (entry.fieldLabel || entry.field || "") + (entry.value ? ": „" + String(entry.value).slice(0, 60) + "”" : "") + ")";
+    } else if (entry.action === "moved") {
+      detail = " (" + (entry.fromDate || "?") + (entry.fromTime ? " " + entry.fromTime : "") + " → " + (entry.toDate || "?") + (entry.toTime ? " " + entry.toTime : "") + ")";
+    } else if (entry.action === "day_locked" || entry.action === "day_unlocked") {
+      detail = " (" + (entry.date || "") + ")";
+    }
+    var topicPart = entry.topic ? " — „" + entry.topic + "”" : "";
+    return { who: who, when: when, text: label + detail + topicPart };
+  }
+
+  function renderHistoryList(docs){
+    var list = document.getElementById("historyList");
+    list.innerHTML = "";
+    if (!docs.length) {
+      var empty = document.createElement("p");
+      empty.className = "empty-note";
+      empty.textContent = "Brak zapisanej historii.";
+      list.appendChild(empty);
+      return;
+    }
+    docs.forEach(function(data){
+      var desc = describeHistoryEntry(data);
+      var row = document.createElement("div");
+      row.className = "history-entry";
+      var main = document.createElement("div");
+      main.innerHTML = "<b>" + desc.who.replace(/</g, "&lt;") + "</b> " + desc.text.replace(/</g, "&lt;");
+      row.appendChild(main);
+      var meta = document.createElement("div");
+      meta.className = "history-meta";
+      meta.textContent = desc.when;
+      row.appendChild(meta);
+      list.appendChild(row);
+    });
+  }
+
+  function loadHistory(){
+    var list = document.getElementById("historyList");
+    if (!state.db) { list.innerHTML = '<p class="empty-note">Brak połączenia z bazą.</p>'; return; }
+    list.innerHTML = '<p class="empty-note">Wczytywanie…</p>';
+    state.db.collection("history").orderBy("at", "desc").limit(300).get()
+      .then(function(snap){
+        var docs = [];
+        snap.forEach(function(d){ docs.push(d.data()); });
+        renderHistoryList(docs);
+      })
+      .catch(function(){
+        list.innerHTML = '<p class="empty-note">Nie udało się wczytać historii.</p>';
+      });
+  }
+
+  function csvEscape(value){
+    var s = String(value == null ? "" : value);
+    if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function downloadReport(monthStr){
+    if (!state.db) { toast("Brak połączenia z bazą.", "error"); return; }
+    var start = monthStr + "-01";
+    var end = monthStr + "-31";
+    state.db.collection("posts").where("date", ">=", start).where("date", "<=", end).get()
+      .then(function(snap){
+        var counts = {};
+        snap.forEach(function(d){
+          var data = d.data();
+          var name = (data.assignee && data.assignee.trim()) || "Nieprzypisane";
+          counts[name] = (counts[name] || 0) + 1;
+        });
+        var names = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a]; });
+        var rows = [["Osoba", "Liczba postów"]];
+        names.forEach(function(name){ rows.push([name, counts[name]]); });
+        if (names.length === 0) rows.push(["Brak danych dla tego miesiąca", ""]);
+        var csv = rows.map(function(r){ return r.map(csvEscape).join(","); }).join("\r\n");
+        var blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "raport-" + monthStr + ".csv";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+      })
+      .catch(function(){ toast("Nie udało się wygenerować raportu.", "error"); });
+  }
+
+  function initAdminPanel(){
+    var gateBackdrop = document.getElementById("adminGateBackdrop");
+    var gateInput = document.getElementById("adminGateInput");
+    var gateError = document.getElementById("adminGateError");
+    var panelBackdrop = document.getElementById("adminPanelBackdrop");
+
+    var openPanel = function(){
+      panelBackdrop.hidden = false;
+      loadHistory();
+      try {
+        var now = new Date();
+        var monthInput = document.getElementById("reportMonth");
+        if (!monthInput.value) monthInput.value = now.getFullYear() + "-" + pad(now.getMonth() + 1);
+      } catch (e) {}
+    };
+
+    document.getElementById("adminBtn").addEventListener("click", function(){
+      if (isAdminUnlocked()) { openPanel(); return; }
+      gateError.hidden = true;
+      gateInput.value = "";
+      gateBackdrop.hidden = false;
+      gateInput.focus();
+    });
+
+    document.getElementById("adminGateClose").addEventListener("click", function(){ gateBackdrop.hidden = true; });
+    gateBackdrop.addEventListener("click", function(e){ if (e.target === gateBackdrop) gateBackdrop.hidden = true; });
+
+    document.getElementById("adminGateForm").addEventListener("submit", function(e){
+      e.preventDefault();
+      var submitBtn = e.target.querySelector("button[type=submit]");
+      submitBtn.disabled = true;
+      sha256Hex(gateInput.value).then(function(hash){
+        submitBtn.disabled = false;
+        if (hash === ADMIN_HASH) {
+          try { localStorage.setItem(ADMIN_UNLOCK_KEY, "1"); } catch (e2) {}
+          gateError.hidden = true;
+          gateBackdrop.hidden = true;
+          openPanel();
+        } else {
+          gateError.hidden = false;
+          gateInput.value = "";
+          gateInput.focus();
+        }
+      });
+    });
+
+    document.getElementById("adminPanelClose").addEventListener("click", function(){ panelBackdrop.hidden = true; });
+    panelBackdrop.addEventListener("click", function(e){ if (e.target === panelBackdrop) panelBackdrop.hidden = true; });
+
+    document.getElementById("reportBtn").addEventListener("click", function(){
+      var monthInput = document.getElementById("reportMonth");
+      if (!monthInput.value) { toast("Wybierz miesiąc.", "error"); return; }
+      downloadReport(monthInput.value);
+    });
+  }
+
   var FIREBASE_CONFIG = {
     apiKey: "AIzaSyA7FAl25zeIuxuG7We8EpABLgAXFsU_8zQ",
     authDomain: "plan-publikacji-noizz.firebaseapp.com",
@@ -2144,6 +2413,7 @@
 
   async function boot(){
     initWhoAmI();
+    initAdminPanel();
 
     try {
       firebase.initializeApp(FIREBASE_CONFIG);
