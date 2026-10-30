@@ -246,6 +246,8 @@
   .day-col.is-today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
   .day-col.is-col-drop-target{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset;}
   .day-col.is-weekend{background:var(--weekend-bg);}
+  .day-col.is-proposals{background:var(--surface-2);border-style:dashed;}
+  .proposals-hint{color:var(--text-muted);font-size:11px;line-height:1.4;margin:0 0 2px;}
   .day-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;}
   .day-head .weekday-wrap{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
   .day-head .weekday{font-family:var(--font-display);font-weight:800;font-size:13px;letter-spacing:-0.01em;text-transform:uppercase;}
@@ -820,8 +822,10 @@
     teamMembers: [],
     postsByDate: {},
     dayStatus: {},
+    proposals: [],
     unsubWeek: null,
     unsubDays: null,
+    unsubProposals: null,
     tabsByDate: {}
   };
 
@@ -1349,8 +1353,19 @@
       e.preventDefault();
       e.stopPropagation();
       el.classList.remove("is-drop-target");
-      var sourceId = e.dataTransfer.getData("text/plain");
-      if (!sourceId || sourceId === post.id) return;
+      var raw = e.dataTransfer.getData("text/plain");
+      if (!raw) return;
+      if (raw.indexOf("proposal:") === 0) {
+        var proposalTargetDate = post.date || date;
+        if (state.dayStatus[proposalTargetDate] && state.dayStatus[proposalTargetDate].confirmed) {
+          toast("Nie można przenieść propozycji na zatwierdzony dzień.", "error");
+          return;
+        }
+        convertProposalToPost(raw.slice("proposal:".length), proposalTargetDate);
+        return;
+      }
+      var sourceId = raw;
+      if (sourceId === post.id) return;
       var sourceEl = document.querySelector('.card[data-id="' + sourceId + '"]');
       if (!sourceEl) return;
       swapPostSlots(
@@ -1414,6 +1429,65 @@
     state.db.doc("days/" + iso).set(payload)
       .then(function(){ logHistory(confirmed ? "day_locked" : "day_unlocked", { date: iso }); })
       .catch(function(){ toast("Nie udało się zaktualizować statusu dnia.", "error"); });
+  }
+
+  // ---------- proposals (weekend idea stash) ----------
+
+  var patchProposal = debounce(function(id, field, value){
+    if (!state.db) return;
+    var payload = {};
+    payload[field] = value;
+    payload.updatedAt = new Date().toISOString();
+    payload.updatedBy = state.myName || null;
+    state.db.collection("proposals").doc(id).update(payload)
+      .catch(function(){ toast("Nie udało się zapisać zmian — spróbuj ponownie.", "error"); });
+  }, 500);
+
+  function addProposal(fields){
+    if (!state.db) return;
+    var payload = {
+      topic: fields.topic,
+      link: fields.link || "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: state.myName || null
+    };
+    state.db.collection("proposals").add(payload)
+      .then(function(ref){ logHistory("proposal_created", { postId: ref.id, topic: payload.topic }); })
+      .catch(function(){ toast("Nie udało się dodać propozycji — spróbuj ponownie.", "error"); });
+  }
+
+  function deleteProposal(id, topicSnapshot){
+    if (!state.db) return;
+    state.db.collection("proposals").doc(id).delete()
+      .then(function(){ logHistory("proposal_deleted", { postId: id, topic: topicSnapshot || "" }); })
+      .catch(function(){ toast("Nie udało się usunąć propozycji.", "error"); });
+  }
+
+  function convertProposalToPost(proposalId, targetDate){
+    if (!state.db) return;
+    var ref = state.db.collection("proposals").doc(proposalId);
+    ref.get().then(function(snap){
+      if (!snap.exists) return;
+      var data = snap.data() || {};
+      var now = new Date().toISOString();
+      var payload = {
+        date: targetDate,
+        time: "",
+        topic: data.topic || "",
+        assignee: "",
+        link: data.link || "",
+        done: false,
+        confirmed: false,
+        createdAt: now,
+        updatedAt: now,
+        updatedBy: state.myName || null
+      };
+      return state.db.collection("posts").add(payload).then(function(postRef){
+        logHistory("created", { postId: postRef.id, topic: payload.topic, note: "z propozycji" });
+        return ref.delete();
+      });
+    }).catch(function(){ toast("Nie udało się przenieść propozycji na dzień.", "error"); });
   }
 
   function renderLockedLinkCell(container, url){
@@ -1848,6 +1922,248 @@
     return wrap;
   }
 
+  // ---------- proposals column (weekend idea stash) ----------
+
+  function proposalsColumnId(){ return "day-proposals"; }
+
+  function wireProposalDrag(el, proposal){
+    el.draggable = true;
+    el.addEventListener("dragstart", function(e){
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", "proposal:" + proposal.id);
+      el.classList.add("is-dragging");
+    });
+    el.addEventListener("dragend", function(){
+      el.classList.remove("is-dragging");
+    });
+  }
+
+  function buildProposalCard(proposal){
+    var el = document.createElement("div");
+    el.className = "card proposal-card";
+    el.dataset.id = proposal.id;
+
+    if (!state.readOnly) wireProposalDrag(el, proposal);
+
+    var topic = document.createElement("textarea");
+    topic.id = "proposal-topic-" + proposal.id;
+    topic.className = "topic-input";
+    topic.placeholder = "O czym jest pomysł?";
+    topic.setAttribute("aria-label", "Temat propozycji");
+    topic.rows = 2;
+    topic.value = proposal.topic || "";
+    topic.readOnly = state.readOnly;
+    topic.addEventListener("input", function(){
+      autoGrow(topic);
+      patchProposal(proposal.id, "topic", topic.value);
+    });
+    autoGrow(topic);
+    el.appendChild(topic);
+
+    var linkRow = document.createElement("div");
+    linkRow.className = "link-row is-editing";
+    var link = document.createElement("input");
+    link.type = "url";
+    link.id = "proposal-link-" + proposal.id;
+    link.className = "link-input";
+    link.placeholder = "Link do researchu…";
+    link.setAttribute("aria-label", "Link do researchu propozycji");
+    link.value = proposal.link || "";
+    link.readOnly = state.readOnly;
+    linkRow.appendChild(link);
+
+    var open = document.createElement("a");
+    open.className = "link-open";
+    open.target = "_blank";
+    open.rel = "noopener noreferrer";
+    open.setAttribute("aria-label", "Otwórz link");
+    open.textContent = "↗";
+    linkRow.appendChild(open);
+    updateLinkOpen(el, proposal.link, open);
+
+    link.addEventListener("input", function(){
+      patchProposal(proposal.id, "link", link.value);
+      updateLinkOpen(el, link.value, open);
+    });
+
+    el.appendChild(linkRow);
+
+    var footer = document.createElement("div");
+    footer.className = "card-footer";
+    var updatedBy = document.createElement("span");
+    updatedBy.className = "updated-by";
+    updatedBy.textContent = proposal.updatedBy ? ("Dodał(a): " + proposal.updatedBy) : "";
+    footer.appendChild(updatedBy);
+
+    if (!state.readOnly) {
+      var del = document.createElement("button");
+      del.className = "delete-btn";
+      del.type = "button";
+      del.textContent = "Usuń";
+      del.title = "Usuń propozycję";
+      var delConfirmTimer = null;
+      del.addEventListener("click", function(){
+        if (del.classList.contains("is-confirm")) {
+          clearTimeout(delConfirmTimer);
+          deleteProposal(proposal.id, topic.value || "");
+          return;
+        }
+        del.classList.add("is-confirm");
+        del.textContent = "Na pewno?";
+        delConfirmTimer = setTimeout(function(){
+          del.classList.remove("is-confirm");
+          del.textContent = "Usuń";
+        }, 3000);
+      });
+      del.addEventListener("blur", function(){
+        clearTimeout(delConfirmTimer);
+        del.classList.remove("is-confirm");
+        del.textContent = "Usuń";
+      });
+      footer.appendChild(del);
+    }
+    el.appendChild(footer);
+
+    return el;
+  }
+
+  function buildProposalAddRow(){
+    var wrap = document.createElement("form");
+    wrap.className = "add-row";
+
+    var topic = document.createElement("textarea");
+    topic.id = "add-proposal-topic";
+    topic.className = "topic-input";
+    topic.placeholder = "+ Dodaj propozycję…";
+    topic.setAttribute("aria-label", "Temat nowej propozycji");
+    topic.rows = 1;
+    topic.required = true;
+    topic.addEventListener("input", function(){ autoGrow(topic); });
+    topic.addEventListener("keydown", function(e){
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (wrap.requestSubmit) wrap.requestSubmit();
+        else wrap.dispatchEvent(new Event("submit", { cancelable: true }));
+      }
+    });
+    wrap.appendChild(topic);
+
+    var linkRow = document.createElement("div");
+    linkRow.className = "link-row is-editing";
+    var link = document.createElement("input");
+    link.type = "url";
+    link.id = "add-proposal-link";
+    link.className = "link-input";
+    link.placeholder = "Link do researchu (opcjonalnie)…";
+    link.setAttribute("aria-label", "Link do researchu nowej propozycji");
+    linkRow.appendChild(link);
+    var submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "Dodaj";
+    linkRow.appendChild(submit);
+    wrap.appendChild(linkRow);
+
+    wrap.addEventListener("submit", function(e){
+      e.preventDefault();
+      var value = topic.value.trim();
+      if (!value) return;
+      addProposal({ topic: value, link: link.value });
+      topic.value = ""; link.value = "";
+      autoGrow(topic);
+      topic.focus();
+    });
+
+    if (!state.db || state.readOnly) {
+      wrap.hidden = true;
+    }
+
+    return wrap;
+  }
+
+  function buildProposalsColumn(){
+    var col = document.createElement("section");
+    col.id = proposalsColumnId();
+    col.className = "day-col is-proposals";
+    col.dataset.date = "__proposals__";
+
+    var head = document.createElement("div");
+    head.className = "day-head";
+    var weekdayWrap = document.createElement("div");
+    weekdayWrap.className = "weekday-wrap";
+    var weekday = document.createElement("span");
+    weekday.className = "weekday";
+    weekday.textContent = "Propozycje";
+    weekdayWrap.appendChild(weekday);
+    var countBadge = document.createElement("span");
+    countBadge.className = "count-badge";
+    countBadge.id = "count-proposals";
+    countBadge.hidden = true;
+    weekdayWrap.appendChild(countBadge);
+    head.appendChild(weekdayWrap);
+    col.appendChild(head);
+
+    var hint = document.createElement("p");
+    hint.className = "hint proposals-hint";
+    hint.textContent = "Schowek na pomysły na weekend — przeciągnij kartę na Sobotę lub Niedzielę, żeby zaplanować.";
+    col.appendChild(hint);
+
+    var cards = document.createElement("div");
+    cards.className = "cards";
+    col.appendChild(cards);
+
+    col.appendChild(buildProposalAddRow());
+
+    return col;
+  }
+
+  function reconcileProposals(){
+    var col = document.getElementById(proposalsColumnId());
+    if (!col) return;
+    var list = col.querySelector(".cards");
+    var items = (state.proposals || []).slice().sort(function(a, b){
+      return (a.createdAt || "").localeCompare(b.createdAt || "");
+    });
+
+    var countBadge = document.getElementById("count-proposals");
+    if (countBadge) {
+      countBadge.textContent = String(items.length);
+      countBadge.hidden = items.length === 0;
+    }
+
+    var keep = {};
+    items.forEach(function(p){ keep[p.id] = true; });
+    Array.prototype.slice.call(list.children).forEach(function(child){
+      if (!keep[child.dataset.id]) child.remove();
+    });
+
+    items.forEach(function(p, idx){
+      var el = list.querySelector('[data-id="' + p.id + '"]');
+      if (!el) {
+        el = buildProposalCard(p);
+      } else {
+        var topicEl = el.querySelector(".topic-input");
+        if (topicEl && document.activeElement !== topicEl) { topicEl.value = p.topic || ""; autoGrow(topicEl); }
+        var linkEl = el.querySelector(".link-input");
+        if (linkEl && document.activeElement !== linkEl) { linkEl.value = p.link || ""; updateLinkOpen(el, p.link); }
+      }
+      var ref = list.children[idx];
+      if (ref !== el) list.insertBefore(el, ref || null);
+    });
+  }
+
+  function subscribeProposals(){
+    if (!state.db) return;
+    if (state.unsubProposals) { state.unsubProposals(); state.unsubProposals = null; }
+    state.unsubProposals = state.db.collection("proposals").onSnapshot(function(snap){
+      var items = [];
+      snap.forEach(function(doc){
+        items.push(Object.assign({ id: doc.id }, doc.data() || {}));
+      });
+      state.proposals = items;
+      reconcileProposals();
+    }, function(){ /* ignore transient errors; last known state stays */ });
+  }
+
   function dayColumnId(date){ return "day-" + date; }
 
   function renderSkeletonForWeek(){
@@ -1913,14 +2229,19 @@
         col.addEventListener("drop", function(e){
           e.preventDefault();
           col.classList.remove("is-col-drop-target");
-          var sourceId = e.dataTransfer.getData("text/plain");
-          if (!sourceId) return;
-          var sourceEl = document.querySelector('.card[data-id="' + sourceId + '"]');
-          if (!sourceEl || sourceEl.dataset.date === iso) return;
+          var raw = e.dataTransfer.getData("text/plain");
+          if (!raw) return;
           if (state.dayStatus[iso] && state.dayStatus[iso].confirmed) {
-            toast("Nie można przenieść posta na zatwierdzony dzień.", "error");
+            toast("Nie można przenieść na zatwierdzony dzień.", "error");
             return;
           }
+          if (raw.indexOf("proposal:") === 0) {
+            convertProposalToPost(raw.slice("proposal:".length), iso);
+            return;
+          }
+          var sourceId = raw;
+          var sourceEl = document.querySelector('.card[data-id="' + sourceId + '"]');
+          if (!sourceEl || sourceEl.dataset.date === iso) return;
           var sourceTopic = (sourceEl.querySelector(".topic-text") || {}).textContent || (sourceEl.querySelector(".topic-input") || {}).value || "";
           movePostToDate(sourceId, iso, sourceTopic, sourceEl.dataset.date || "");
         });
@@ -1930,6 +2251,9 @@
 
       board.appendChild(col);
     });
+
+    board.appendChild(buildProposalsColumn());
+    reconcileProposals();
 
     var range = document.getElementById("weekRange");
     range.textContent = fmtShort(days[0]) + " – " + fmtShort(days[6]);
@@ -2012,6 +2336,17 @@
       state.tabsByDate[iso] = btn;
       tabs.appendChild(btn);
     });
+
+    var proposalsBtn = document.createElement("button");
+    proposalsBtn.type = "button";
+    proposalsBtn.className = "day-tab-proposals";
+    proposalsBtn.textContent = "💡 Propozycje";
+    proposalsBtn.addEventListener("click", function(){
+      var col = document.getElementById(proposalsColumnId());
+      if (col) col.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+    });
+    state.tabsByDate["__proposals__"] = proposalsBtn;
+    tabs.appendChild(proposalsBtn);
   }
 
   function updateActiveDayTab(){
@@ -2433,6 +2768,7 @@
 
     subscribeTeam();
     subscribeWeek();
+    subscribeProposals();
   }
 
   initGate();
